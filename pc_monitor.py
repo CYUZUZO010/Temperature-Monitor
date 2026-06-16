@@ -8,7 +8,7 @@ SERIAL_PORT = "COM5"         # Change to your port (Linux: /dev/ttyUSB0, Mac: /d
 BAUD_RATE = 9600             # Must match Arduino's Serial.begin(9600)
 MQTT_BROKER = "broker.benax.rw"  # Using broker.benax.rw as requested
 MQTT_PORT = 1883             # Default MQTT port
-MQTT_TOPIC = "spees402/temperature/CYUZUZO"  # Using your name: CYUZUZO
+MQTT_TOPIC = "spees402/temperature/Phoenix"  # Using your name: CYUZUZO
 
 
 def on_connect(client, userdata, flags, rc):
