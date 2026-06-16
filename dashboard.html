@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SPEES402 — Live MQTT Temperature Monitor</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+    :root {
+      --bg: #0a0f1e;
+      --surface: #111827;
+      --surface2: #1a2235;
+      --border: #1e2d45;
+      --accent: #00d4ff;
+      --accent2: #0077ff;
+      --warm: #ff6b35;
+      --cool: #4ecdc4;
+      --normal: #00d4ff;
+      --high: #ff4757;
+      --low: #4ecdc4;
+      --text: #e8f4fd;
+      --muted: #6b8399;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header-left .eyebrow {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    h1 {
+      font-size: clamp(22px, 4vw, 32px);
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+
+    h1 span {
+      color: var(--accent);
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 212, 255, 0.08);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 100px;
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .pulse-dot.disconnected {
+      background: var(--high);
+      animation: none;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.4;
+        transform: scale(0.7);
+      }
+    }
+
+    .temp-hero {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+      flex-wrap: wrap;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .temp-hero::after {
+      content: '';
+      position: absolute;
+      top: -60px;
+      right: -60px;
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0, 212, 255, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .temp-value-group {
+      position: relative;
+      z-index: 1;
+    }
+
+    .temp-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .temp-number {
+      font-family: 'Space Mono', monospace;
+      font-size: clamp(60px, 10vw, 96px);
+      font-weight: 700;
+      line-height: 1;
+      color: var(--accent);
+      transition: color 0.5s ease;
+    }
+
+    .temp-number.high {
+      color: var(--high);
+    }
+
+    .temp-number.low {
+      color: var(--low);
+    }
+
+    .temp-unit {
+      font-size: 28px;
+      color: var(--muted);
+      vertical-align: super;
+      font-weight: 400;
+    }
+
+    .temp-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 6px 14px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      background: rgba(0, 212, 255, 0.1);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      color: var(--accent);
+      transition: all 0.5s ease;
+    }
+
+    .temp-status.high {
+      background: rgba(255, 71, 87, 0.1);
+      border-color: rgba(255, 71, 87, 0.3);
+      color: var(--high);
+    }
+
+    .temp-status.low {
+      background: rgba(78, 205, 196, 0.1);
+      border-color: rgba(78, 205, 196, 0.3);
+      color: var(--low);
+    }
+
+    .gauge-wrap {
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .gauge-svg {
+      width: 160px;
+      height: 100px;
+      overflow: visible;
+    }
+
+    .gauge-bg {
+      fill: none;
+      stroke: var(--border);
+      stroke-width: 10;
+      stroke-linecap: round;
+    }
+
+    .gauge-fill {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 10;
+      stroke-linecap: round;
+      stroke-dasharray: 251.2;
+      stroke-dashoffset: 251.2;
+      transition: stroke-dashoffset 1s ease, stroke 0.5s ease;
+    }
+
+    .gauge-fill.high {
+      stroke: var(--high);
+    }
+
+    .gauge-fill.low {
+      stroke: var(--low);
+    }
+
+    .gauge-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1px;
+      margin-top: 8px;
+    }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+    }
+
+    .stat-card .stat-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .stat-card .stat-val {
+      font-family: 'Space Mono', monospace;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .stat-card .stat-val span {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px;
+      margin-bottom: 24px;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .chart-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.3px;
+    }
+
+    .chart-subtitle {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    canvas {
+      width: 100% !important;
+      border-radius: 8px;
+    }
+
+    .log-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px;
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .log-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .clear-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+
+    .clear-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .log-feed {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .log-feed::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .log-feed::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .log-feed::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .log-entry {
+      color: var(--muted);
+    }
+
+    .log-entry .ts {
+      color: var(--accent2);
+    }
+
+    .log-entry .val {
+      color: var(--text);
+    }
+
+    .log-entry.high .val {
+      color: var(--high);
+    }
+
+    .log-entry.low .val {
+      color: var(--low);
+    }
+
+    .mqtt-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .info-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+    }
+
+    .info-card .info-label {
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      font-family: 'Space Mono', monospace;
+    }
+
+    .info-card .info-val {
+      font-family: 'Space Mono', monospace;
+      font-size: 13px;
+      color: var(--accent);
+      word-break: break-all;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+
+    .ctrl-input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-family: 'Space Mono', monospace;
+      font-size: 13px;
+      flex: 1;
+      min-width: 250px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .ctrl-input:focus {
+      border-color: var(--accent);
+    }
+
+    .ctrl-btn {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      padding: 10px 24px;
+      border-radius: 10px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      letter-spacing: 0.5px;
+    }
+
+    .ctrl-btn:hover {
+      opacity: 0.85;
+    }
+
+    @media (max-width: 600px) {
+      .temp-hero {
+        flex-direction: column;
+      }
+
+      .mqtt-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <div class="header-left">
+        <div class="eyebrow">SPEES402 · Practical A</div>
+        <h1>Temperature <span>Monitor</span></h1>
+      </div>
+      <div class="live-badge" id="statusContainer">
+        <div class="pulse-dot" id="liveDot"></div>
+        <span id="liveText">CONNECTING...</span>
+      </div>
+    </header>
+
+    <div class="controls">
+      <input class="ctrl-input" id="topicInput" placeholder="MQTT Topic" value="spees402/temperature/CYUZUZO" />
+      <button class="ctrl-btn" onclick="reconnectMQTT()">⚡ Update Topic</button>
+    </div>
+
+    <div class="mqtt-row">
+      <div class="info-card">
+        <div class="info-label">Active MQTT Broker Connection</div>
+        <div class="info-val">broker.benax.rw:9001 (WebSockets)</div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">Listening Topic</div>
+        <div class="info-val" id="displayTopic">spees402/temperature/CYUZUZO</div>
+      </div>
+    </div>
+
+    <div class="temp-hero">
+      <div class="temp-value-group">
+        <div class="temp-label">Real-time Temperature</div>
+        <div class="temp-number" id="tempNumber">--<span class="temp-unit">°C</span></div>
+        <div class="temp-status" id="statusBadge">AWAITING</div>
+      </div>
+      <div class="gauge-wrap">
+        <svg class="gauge-svg" viewBox="0 0 160 100">
+          <path class="gauge-bg" d="M 20 90 A 70 70 0 0 1 140 90" />
+          <path class="gauge-fill" id="gaugeFill" d="M 20 90 A 70 70 0 0 1 140 90" />
+        </svg>
+        <div class="gauge-label" id="gaugeLabel">0 – 50°C scaling</div>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Min Today</div>
+        <div class="stat-val" id="minVal">--<span> °C</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Max Today</div>
+        <div class="stat-val" id="maxVal">--<span> °C</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Average</div>
+        <div class="stat-val" id="avgVal">--<span> °C</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Logs</div>
+        <div class="stat-val" id="countVal">0</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Hardware Data Feed Stream</div>
+          <div class="chart-subtitle">Rolling viewport showing last 30 readings</div>
+        </div>
+      </div>
+      <canvas id="tempChart" height="180"></canvas>
+    </div>
+
+    <div class="log-card">
+      <div class="log-header">
+        <div class="chart-title">MQTT Stream Log</div>
+        <button class="clear-btn" onclick="clearLog()">Clear Log</button>
+      </div>
+      <div class="log-feed" id="logFeed">
+        <div class="log-entry"><span class="ts">[system]</span> Initializing client stack...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('tempChart');
+    const ctx = canvas.getContext('2d');
+    canvas.width = canvas.parentElement.offsetWidth - 56;
+
+    let readings = [];
+    let minV = Infinity, maxV = -Infinity, sumV = 0, countV = 0;
+    let client = null;
+
+    function getColor(t) {
+      if (t > 35) return '#ff4757';
+      if (t < 15) return '#4ecdc4';
+      return '#00d4ff';
+    }
+
+    function drawChart() {
+      const w = canvas.width, h = canvas.height || 180;
+      ctx.clearRect(0, 0, w, h);
+      if (readings.length < 2) return;
+
+      const pad = { top: 20, right: 20, bottom: 30, left: 40 };
+      const cw = w - pad.left - pad.right;
+      const ch = h - pad.top - pad.bottom;
+
+      const vals = readings.slice(-30);
+      const mn = Math.min(...vals) - 2;
+      const mx = Math.max(...vals) + 2;
+      const range = mx - mn || 1;
+
+      const xStep = cw / (vals.length - 1);
+      const pts = vals.map((v, i) => ({
+        x: pad.left + i * xStep,
+        y: pad.top + ch - ((v - mn) / range) * ch
+      }));
+
+      ctx.strokeStyle = 'rgba(30,45,69,1)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.top + (ch / 4) * i;
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y);
+        ctx.stroke();
+        const label = (mx - (range / 4) * i).toFixed(1);
+        ctx.fillStyle = '#6b8399';
+        ctx.font = '10px Space Mono, monospace';
+        ctx.fillText(label, 4, y + 4);
+      }
+
+      const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+      grad.addColorStop(0, 'rgba(0,212,255,0.2)');
+      grad.addColorStop(1, 'rgba(0,212,255,0)');
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pad.top + ch);
+      pts.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.lineTo(pts[pts.length - 1].x, pad.top + ch);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.strokeStyle = '#00d4ff';
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = 'round';
+      pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+
+      pts.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#00d4ff';
+        ctx.fill();
+      });
+    }
+
+    function processIncomingPayload(payloadText) {
+      // Parse incoming data string format: "24.5,NORMAL"
+      if (!payloadText.includes(',')) return;
+
+      const segments = payloadText.split(',');
+      const tempFloat = parseFloat(segments[0]);
+      const statusString = segments[1].trim().toUpperCase();
+
+      if (isNaN(tempFloat)) return;
+
+      // Render to Big Counter Panel
+      const el = document.getElementById('tempNumber');
+      el.innerHTML = `${tempFloat.toFixed(1)}<span class="temp-unit">°C</span>`;
+      el.className = 'temp-number ' + (statusString === 'HIGH' ? 'high' : statusString === 'LOW' ? 'low' : '');
+
+      // Render to Badge
+      const badge = document.getElementById('statusBadge');
+      badge.textContent = statusString;
+      badge.className = 'temp-status ' + (statusString === 'HIGH' ? 'high' : statusString === 'LOW' ? 'low' : '');
+
+      // Render Gauge Animation
+      const pct = Math.min(Math.max(tempFloat / 50, 0), 1);
+      const dashOffset = 251.2 - (pct * 251.2);
+      const fill = document.getElementById('gaugeFill');
+      fill.style.strokeDashoffset = dashOffset;
+      fill.className = 'gauge-fill ' + (statusString === 'HIGH' ? 'high' : statusString === 'LOW' ? 'low' : '');
+      document.getElementById('gaugeLabel').textContent = `${tempFloat.toFixed(1)}°C of 50°C`;
+
+      // Compute Aggregations
+      readings.push(tempFloat);
+      if (tempFloat < minV) minV = tempFloat;
+      if (tempFloat > maxV) maxV = tempFloat;
+      sumV += tempFloat;
+      countV++;
+
+      document.getElementById('minVal').innerHTML = `${minV.toFixed(1)}<span> °C</span>`;
+      document.getElementById('maxVal').innerHTML = `${maxV.toFixed(1)}<span> °C</span>`;
+      document.getElementById('avgVal').innerHTML = `${(sumV / countV).toFixed(1)}<span> °C</span>`;
+      document.getElementById('countVal').textContent = countV;
+
+      // Output to System Logger console frame
+      const ts = new Date().toLocaleTimeString();
+      const feed = document.getElementById('logFeed');
+      const cls = statusString === 'HIGH' ? 'high' : statusString === 'LOW' ? 'low' : '';
+      feed.innerHTML += `<div class="log-entry ${cls}"><span class="ts">[${ts}]</span> <span class="val">${payloadText}</span></div>`;
+      feed.scrollTop = feed.scrollHeight;
+
+      drawChart();
+    }
+
+    // ================= MQTT INTERFACE ENGINE =================
+    function initMQTTConnection() {
+      const currentTopic = document.getElementById('topicInput').value.strip ? document.getElementById('topicInput').value.strip() : document.getElementById('topicInput').value;
+      document.getElementById('displayTopic').textContent = currentTopic;
+
+      const feed = document.getElementById('logFeed');
+      feed.innerHTML += `<div class="log-entry"><span class="ts">[system]</span> Contacting broker.benax.rw via port 9001...</div>`;
+
+      // Generate unique randomized ID instance string to establish link safety
+      const clientId = "client_" + Math.random().toString(16).substr(2, 8);
+
+      // Instantiating Paho engine over port 9001 path for secure socket connectivity
+      client = new Paho.MQTT.Client("broker.benax.rw", 9001, clientId);
+
+      client.onConnectionLost = (responseObject) => {
+        document.getElementById('liveDot').className = "pulse-dot disconnected";
+        document.getElementById('liveText').textContent = "DISCONNECTED";
+        feed.innerHTML += `<div class="log-entry high"><span class="ts">[error]</span> Connection dropped: ${responseObject.errorMessage}. Reconnecting in 5s...</div>`;
+        setTimeout(initMQTTConnection, 5000);
+      };
+
+      client.onMessageArrived = (message) => {
+        processIncomingPayload(message.payloadString);
+      };
+
+      client.connect({
+        onSuccess: () => {
+          document.getElementById('liveDot').className = "pulse-dot";
+          document.getElementById('liveText').textContent = "LIVE STREAM";
+          feed.innerHTML += `<div class="log-entry"><span class="ts">[success]</span> Network socket active! Subscribed to [${currentTopic}]</div>`;
+          client.subscribe(currentTopic);
+        },
+        onFailure: (err) => {
+          feed.innerHTML += `<div class="log-entry high"><span class="ts">[error]</span> Handshake failed: ${err.errorMessage}</div>`;
+        },
+        useSSL: false,
+        timeout: 3
+      });
+    }
+
+    function reconnectMQTT() {
+      if (client) {
+        try { client.disconnect(); } catch (e) { }
+      }
+      initMQTTConnection();
+    }
+
+    function clearLog() {
+      document.getElementById('logFeed').innerHTML = '<div class="log-entry"><span class="ts">[system]</span> Log cleared.</div>';
+    }
+
+    window.addEventListener('resize', () => {
+      canvas.width = canvas.parentElement.offsetWidth - 56;
+      drawChart();
+    });
+
+    // Autostart engine hook
+    window.onload = () => {
+      initMQTTConnection();
+    };
+  </script>
+</body>
+
+</html>
